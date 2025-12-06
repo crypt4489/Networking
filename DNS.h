@@ -73,5 +73,18 @@ typedef struct dns_answer_packet_t
 	DNSAnswer Answer;
 } DNSAnswerPacket;
 
-char* GetAddrByHostName(sockaddr_in* s, const char* str, int flags);
+
+
+typedef struct dns_query_result
+{
+	char hostname[128];
+	char aliasname[128];
+	int ipv4or6;
+	int ipv4;
+	char ipv6[16];
+} DNSQueryResult;
+
+DNSQueryResult* GetAddrByHostName(sockaddr_in* s, const char* str, int flags, int* answerCount);
+
+void ShowDNSQueryResult(DNSQueryResult* result);
 

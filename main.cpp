@@ -317,7 +317,16 @@ int main() {
 //	what2->sin_addr.s_addr = 0x01010101;
 
 
-	char* what = GetAddrByHostName((sockaddr_in*)&dnsserver, "google.com\0", NS);
+	int answerCount = 0;
+
+	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "google.com\0", MX, &answerCount);
+
+	for (int i = 0; i < answerCount; i++)
+	{
+		printf("%d)\n", i + 1);
+		ShowDNSQueryResult(&ress[i]);
+		printf("---------------------------\n");
+	}
 
 	WSACleanup();
 
