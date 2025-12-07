@@ -311,15 +311,9 @@ int main() {
 
 	GetIpAddresses(&result, &dnsserver);
 
-//	sockaddr_in* what2 = (sockaddr_in*)&dnsserver;
-
-//	what2->sin_family = AF_INET;
-//	what2->sin_addr.s_addr = 0x01010101;
-
-
 	int answerCount = 0;
 
-	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "google.com\0", MX, &answerCount);
+	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "www.BLAHBLAHHOOEY.com\0", A, &answerCount);
 
 	for (int i = 0; i < answerCount; i++)
 	{
