@@ -6,9 +6,6 @@
 #include <stdio.h>
 #include "DNS.h"
 
-#pragma comment(lib, "Ws2_32.lib")
-#pragma comment(lib, "IPHLPAPI.lib")
-
 #define MB 1024 * 1024
 
 SOCKET Clients[10];
