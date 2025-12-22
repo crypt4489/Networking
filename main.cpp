@@ -310,7 +310,7 @@ int main() {
 
 	int answerCount = 0;
 
-	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "www.BLAHBLAHHOOEY.com\0", A, &answerCount);
+	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "www.hulu.com\0", A, &answerCount);
 
 	for (int i = 0; i < answerCount; i++)
 	{

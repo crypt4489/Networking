@@ -19,7 +19,7 @@
 #define DEBUG_LOG_LVL 2
 #define INFO_LOG_LVL 3
 
-#define DNS_LOG_LVL 2
+#define DNS_LOG_LVL 0
 
 #define STRINGIFY_IMPL(X) #X
 #define STRINGIFY(X) STRINGIFY_IMPL(X)
@@ -46,12 +46,11 @@
 #define ERRORLOG(fmt, ...)
 #endif
 
-
+#define MAX_STRING_LEN 256
 #define COPYSTRING(src, dest, count) \
 	do { \
 		dest[count] = src[count]; \
-		count++; \
-	} while(src[count]) \
+	} while(src[count++] && count < MAX_STRING_LEN) \
 
 
 enum DNSReturnCodes
@@ -138,6 +137,12 @@ static CACHE_ALIGN char HelperSpace[128];
 
 static CACHE_ALIGN char FunctionAnswerPool[FUNCANSWEPOOL];
 static int FunctionAnswerPtr = 0;
+
+#define MAX_RECURSE_LIMIT 10
+
+static CACHE_ALIGN int RecursionLevelPointers[MAX_RECURSE_LIMIT];
+static CACHE_ALIGN int RecursionLevelEnds[MAX_RECURSE_LIMIT];
+static int RecursionLevelPointer = 0;
 
 static uint16_t make_dns_flags(int QR, int OpCode, int AA, int TC, int RD, int RA, int Z, int RCODE)
 {
@@ -358,6 +363,189 @@ static int DeDeuplicateIPv4(char* recordBuffer, uint16_t count, uint16_t* record
 
 static int DeDeuplicateIPv6(char* recordBuffer, uint16_t count, uint16_t* recordoffsets, char* addr);
 
+static int RecurseFindAddress(int* recordPtr)
+{
+	int addr = 0, begin = *recordPtr;
+
+	DNSRecordReference* ref = (DNSRecordReference*)&RecordsBuffer[begin];
+
+	if (ref->visited) goto recurse_find_end;
+
+	switch (ref->type)
+	{
+	case A:
+	{
+		DNSARecord* record = (DNSARecord*)&RecordsBuffer[begin + sizeof(DNSRecordReference)];
+
+		addr = record->addr;
+
+		ref->visited = 1;
+
+		break;
+	}
+	case CNAME:
+	{
+		DNSCNAMERecord* record = (DNSCNAMERecord*)&RecordsBuffer[begin + sizeof(DNSRecordReference)];
+
+		if (record->arecordcount)
+		{
+			for (uint16_t g = 0; g < record->arecordcount; g++)
+			{
+				DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->arecordid[g]];
+
+				if (aRef1->visited) continue;
+
+				aRef1->visited = 1;
+
+				DNSARecord* aRef = (DNSARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
+
+				addr = aRef->addr;
+
+				goto recurse_find_end;
+			}
+		}
+
+		ref->visited = 1;
+
+		break;
+	}
+	case NS:
+
+	{
+		DNSNSRecord* record = (DNSNSRecord*)&RecordsBuffer[begin + sizeof(DNSRecordReference)];
+
+		if (record->arecordcount)
+		{
+			for (uint16_t g = 0; g < record->arecordcount; g++)
+			{
+				DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->arecordid[g]];
+
+				if (aRef1->visited) continue;
+
+				aRef1->visited = 1;
+
+
+				if (aRef1->type == A)
+				{
+					DNSARecord* aRef = (DNSARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
+
+					addr = aRef->addr;
+
+					goto recurse_find_end;
+				}
+			}	
+		}
+
+		ref->visited = 1;
+
+		break;
+	}
+	case MX:
+	{
+
+		DNSMXRecord* record = (DNSMXRecord*)&RecordsBuffer[begin + sizeof(DNSRecordReference)];
+
+		if (record->arecordcount)
+		{
+			for (uint16_t g = 0; g < record->arecordcount; g++)
+			{
+				DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->arecordid[g]];
+
+				aRef1->visited = 1;
+
+				if (aRef1->type == A)
+				{
+					DNSARecord* aRef = (DNSARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
+
+					addr = aRef->addr;
+
+					goto recurse_find_end;
+				}
+			}
+		}
+
+		ref->visited = 1;
+
+		break;
+	}
+	default:
+		break;
+	}
+
+recurse_find_end:
+
+	if (!addr) *recordPtr += ref->size;
+
+	return addr;
+}
+
+static int RecurseDNSResolver(sockaddr_in* dnsResolver, int recordsBufferStart)
+{
+	int addr = 0;
+	int begin = recordsBufferStart;
+
+	if (RecursionLevelPointer+1 < MAX_RECURSE_LIMIT && recordsBufferStart < RecordsBufferCounter) // we have new records
+	{
+		if (RecursionLevelPointers[++RecursionLevelPointer] == -1)
+		{
+			while (!addr && begin < RecordsBufferCounter)
+			{
+				addr = RecurseFindAddress(&begin);	
+			}
+		}
+	}
+	
+	if (!addr)
+	{
+
+		RecursionLevelPointer--;
+
+		while (RecursionLevelPointer >= 0 && (RecursionLevelPointers[RecursionLevelPointer] == RecursionLevelEnds[RecursionLevelPointer]))
+		{
+			RecursionLevelPointers[RecursionLevelPointer] = -1;
+			RecursionLevelPointer--;
+		}
+		
+
+		while (!addr && RecursionLevelPointer >= 0)
+		{
+
+			begin = RecursionLevelPointers[RecursionLevelPointer]; // got a new level;
+
+			addr = RecurseFindAddress(&begin);
+
+			if (!addr)
+			{
+		
+				if (begin == RecursionLevelEnds[RecursionLevelPointer])
+				{
+					RecursionLevelPointers[RecursionLevelPointer] = -1;
+					RecursionLevelPointer--;
+				}
+				else 
+				{
+					RecursionLevelPointers[RecursionLevelPointer] = begin;
+				}
+			}
+		}
+	}
+	else 
+	{
+		// got a new level;
+		RecursionLevelEnds[RecursionLevelPointer] = RecordsBufferCounter;
+		RecursionLevelPointers[RecursionLevelPointer] = begin;
+	}
+
+	RecordsBufferReader = recordsBufferStart;
+
+	PrintIPv4(addr);
+
+	dnsResolver->sin_addr.s_addr = ntohl(addr);
+
+	return (addr ? 0 : -1);
+}
+
+
 static int CreateDNSQuestion(int flags, const char* domainname)
 {
 	char* q = QueryPool + QueryCount;
@@ -402,14 +590,18 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 
 	int found = 0;
 
-	int currLength = CreateDNSQuestion(flags, str);
-
 	int lErrorReturn = NODOMAIN;
 
 	int recursed = 0;
-	
+
+	memset(RecursionLevelPointers, 0xFF, sizeof(RecursionLevelPointers));
+	RecursionLevelPointer = -1;
+
+
 	do
 	{
+		int currLength = CreateDNSQuestion(flags, str);
+
 		PCSTR IPv4Decode = inet_ntop(dnsResolver.sin_family, &dnsResolver.sin_addr, HelperSpace, sizeof(HelperSpace));
 
 		DEBUGLOG("Searching in IPv4 address %s", IPv4Decode);
@@ -521,6 +713,8 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 
 		offset += (writeName + sizeof(DNSQuestion));
 
+		int recordsBufferStart = RecordsBufferCounter;
+
 		for (uint16_t i = 0; i < anCount; i++)
 		{
 			char* ptr = QueryHead + offset;
@@ -591,15 +785,13 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 			offset += HandleDNSAdditional(answer, QueryHead, &dnsPointer);
 		}
 
-		if (found)
-		{
-			lErrorReturn = anCount;
-		}
-		else {
-
-			//currLength = CreateDNSQuestion(flags, str);
-		}
 		
+		lErrorReturn = anCount;
+
+		if (!found || RecursionLevelPointer >= 0)
+		{
+			found = RecurseDNSResolver(&dnsResolver, recordsBufferStart);
+		}
 	} while (!found);
 
 	DNSQueryResult* returnHeader = (DNSQueryResult*)&FunctionAnswerPool[FunctionAnswerPtr];
@@ -1099,6 +1291,8 @@ static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* poin
 
 	RecordsBufferCounter += sizeof(DNSRecordReference);
 
+	uint16_t referenceLocation = pointer->internalRecordBufferOffset;
+
 	switch (ref->type)
 	{
 		case SOA:
@@ -1128,6 +1322,19 @@ static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* poin
 			RDDATA += 2;
 			DEBUGLOG("Minimum is : %hu  ", ntohs(*((uint16_t*)RDDATA)));
 			RDDATA += 2;
+			break;
+		}
+
+		case NS:
+		{
+			PrintHostName(RDDATA, queryHead, 0);
+			DNSNSRecord* record = (DNSNSRecord*)&RecordsBuffer[RecordsBufferCounter];
+			RecordsBufferCounter += sizeof(DNSNSRecord);
+			record->namelength = WriteHostName(RDDATA, queryHead, 0, &RecordsBuffer[RecordsBufferCounter]);
+			record->arecordcount = 0;
+			record->queryAlias = referenceLocation;
+			RecordsBufferCounter += record->namelength;
+			break;
 		}
 	}
 
