@@ -5,6 +5,7 @@
 #include "iphlpapi.h"
 #include <stdio.h>
 #include "DNS.h"
+#include "DNSRoots.h"
 
 #define MB 1024 * 1024
 
@@ -292,6 +293,10 @@ int main() {
 	*/
 
 
+	const char* fileRoot = "C:\\Users\\dflet\\Documents\\Visual Studio Projects\\Network\\named.root.txt";
+
+	int ret = ParseNamedRoot(fileRoot);
+
 	WSADATA wsadata;
 
 	int res;
@@ -310,7 +315,7 @@ int main() {
 
 	int answerCount = 0;
 
-	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "www.hulu.com\0", A, &answerCount);
+	DNSQueryResult* ress = GetAddrByHostName((sockaddr_in*)&dnsserver, "www.BLAHBLAHHOOEY.com\0", A, &answerCount);
 
 	for (int i = 0; i < answerCount; i++)
 	{

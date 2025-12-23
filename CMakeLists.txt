@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
 	ConnectionSocket.cpp
+    DNSRoots.cpp
 	DNS.cpp
 	main.cpp)
 
@@ -21,6 +22,7 @@ set( PROJECT_HEADERS
   # LIST HEADER FILES HERE
   ConnectionSocket.h
   DNS.h 
+  DNSRoots.h
 )
 
 set (PROJECT_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
