@@ -16,7 +16,6 @@
 
 #define QUERYHOSTNAME MAX_USHORT
 
-
 #define ERROR_LOG_LVL 1
 #define DEBUG_LOG_LVL 2
 #define INFO_LOG_LVL 3
@@ -54,13 +53,11 @@
 		dest[count] = src[count]; \
 	} while(src[count++] && count < MAX_STRING_LEN) \
 
-
 enum DNSReturnCodes
 {
 	NODOMAIN = 0,
 	SERVERFAILURE = -1,
 };
-
 
 typedef struct dns_record_reference
 {
@@ -137,7 +134,6 @@ typedef struct dns_fsm_t
 #define FUNCANSWEPOOL 2 * MB
 #define RECORDPOOLSIZE 256*KB
 
-
 static CACHE_ALIGN char QueryPool[DNSQUERYPOOLSIZE];
 static int QueryCount = 0;
 static CACHE_ALIGN char DNSAnswerPool[DNSANSPOOLSIZE];
@@ -148,7 +144,6 @@ static int RecordsBufferCounter = 0;
 static int RecordsBufferReader = 0;
 
 static CACHE_ALIGN char HelperSpace[128];
-
 static CACHE_ALIGN char FunctionAnswerPool[FUNCANSWEPOOL];
 static int FunctionAnswerPtr = 0;
 
@@ -158,7 +153,7 @@ static CACHE_ALIGN int RecursionLevelPointers[MAX_RECURSE_LIMIT];
 static CACHE_ALIGN int RecursionLevelEnds[MAX_RECURSE_LIMIT];
 static int RecursionLevelPointer = 0;
 
-static uint16_t make_dns_flags(int QR, int OpCode, int AA, int TC, int RD, int RA, int Z, int RCODE)
+static uint16_t MakeDNSFlags(int QR, int OpCode, int AA, int TC, int RD, int RA, int Z, int RCODE)
 {
 	uint16_t ret = 0;
 
@@ -175,7 +170,7 @@ static uint16_t make_dns_flags(int QR, int OpCode, int AA, int TC, int RD, int R
 	return ret;
 }
 
-static void print_dns_flags(uint16_t flags)
+static void PrintDNSFlags(uint16_t flags)
 {
 	DEBUGLOG("QR=%d ", (flags >> 15) & 0x1);
 	DEBUGLOG("OpCode=%d ", (flags >> 11) & 0xF);
@@ -200,8 +195,7 @@ static int CreateQueryHostname(const char* hostname, char* output)
 	while (*ptr)
 	{
 		char count = 0;
-		const char* copy = ptr;
-		char* inSertCount = outputAddr;
+		char* insertCount = outputAddr;
 		outputAddr++;
 		while (*ptr != '.' && *ptr != '\0')
 		{
@@ -211,13 +205,15 @@ static int CreateQueryHostname(const char* hostname, char* output)
 			outputAddr++;
 		}
 		
-		if (count) {
+		if (count) 
+		{
 			ptr++;
-			*inSertCount = count;
+			*insertCount = count;
 			stride += (count + 1);
 		}
 	}
-	outputAddr[0] = 0;
+
+	*outputAddr = 0;
 
 	return stride + 1;
 };
@@ -231,7 +227,8 @@ static int dumpstring(char* c, char count, int terminate)
 		printf("%c", *c);
 		c++;
 		i++;
-		if (!count && terminate > 0) {
+		if (!count && terminate > 0) 
+		{
 			printf(".");
 		}
 	} 
@@ -244,21 +241,23 @@ static int dumpstring(char* c, char count, int terminate)
 static int writestring(char* c, char count, int terminate, char *write)
 {
 	int i = 0;
+
 	while (count-- > 0)
 	{
 		*write++ = *c++;
 		i++;
 	}
+
+	char finalChar = '\0';
 	
-	if (terminate) {
-		*write++ = '.';
-		i++;
-	}
-	else {
-		*write++ = '\0';
+	if (terminate) 
+	{
+		finalChar = '.';
 		i++;
 	}
 
+	*write++ = finalChar;
+	i++;
 
 	return i;
 }
@@ -272,7 +271,6 @@ static int PrintHostName(char* str, char *queryHead, int recursionCount)
 	char count;
 	while (++i && (count = *iter++))
 	{
-
 		if (count < 0)
 		{
 			uint16_t offsetp = (((uint16_t)count) << 8) | (iter[0] & 0xff);
@@ -285,14 +283,13 @@ static int PrintHostName(char* str, char *queryHead, int recursionCount)
 			{
 				offsetp &= 0x3FFF;
 				iter = (queryHead + offsetp);
-				int rem = PrintHostName(iter, queryHead, recursionCount++);
+				int rem = PrintHostName(iter, queryHead, ++recursionCount);
 
 				if (rem < 0) return rem;
 			}
+
 			break;
 		} 
-		
-
 
 		char* stub = iter + count;
 
@@ -300,14 +297,11 @@ static int PrintHostName(char* str, char *queryHead, int recursionCount)
 			
 		i += rem;
 		iter += rem;
-
-		
 	}
 	if (!recursionCount) {
 		printf("\n");
 	}
 	return i;
-
 #else
 	return 0;
 #endif
@@ -315,14 +309,12 @@ static int PrintHostName(char* str, char *queryHead, int recursionCount)
 
 static int WriteHostName(char* str, char* queryHead, int recursionCount, char *write)
 {
-
 	if (recursionCount >= 255) return -1;
 	int i = 0;
 	char* iter = str;
 	char count;
 	while (count = *iter++)
 	{
-
 		if (count < 0)
 		{
 			uint16_t offsetp = (((uint16_t)count) << 8) | (iter[0] & 0xff);
@@ -335,12 +327,13 @@ static int WriteHostName(char* str, char* queryHead, int recursionCount, char *w
 
 				iter = (queryHead + offsetp);
 
-				int rem = WriteHostName(iter, queryHead, recursionCount++, write);
+				int rem = WriteHostName(iter, queryHead, ++recursionCount, write);
 
 				if (rem < 0) return rem;
 
 				i += rem;
 			}
+
 			break;
 		}
 
@@ -349,7 +342,7 @@ static int WriteHostName(char* str, char* queryHead, int recursionCount, char *w
 		int rem = writestring(iter, count, (int)stub[0], write);
 
 		i += rem;
-		iter += (rem-1);
+		iter += (rem-1); //for next count in host name
 		write += rem;
 	}
 
@@ -357,23 +350,14 @@ static int WriteHostName(char* str, char* queryHead, int recursionCount, char *w
 }
 
 static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr);
-
 static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr);
-
 static int HandlePointerCondition(uint16_t* iter, DNSPointer* pointer, int recordsBufferReader, int recordsBufferCounter);
-
 static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr);
-
 static int ProcessBuffer(DNSQueryResult* resultSpace);
-
 static void PrintIPv4(uint32_t addr);
-
 static void PrintIPv6(char* addr);
-
 static void PrintRecordHostname(char* ptr);
-
 static int DeDeuplicateIPv4(char* recordBuffer, uint16_t count, uint16_t* recordoffsets, int addr);
-
 static int DeDeuplicateIPv6(char* recordBuffer, uint16_t count, uint16_t* recordoffsets, char* addr);
 
 static int RecurseFindAddress(int* recordPtr)
@@ -417,7 +401,8 @@ static int RecurseFindAddress(int* recordPtr)
 				goto recurse_find_end;
 			}
 		}
-		else {
+		else 
+		{
 			addr = -1;
 		}
 
@@ -426,7 +411,6 @@ static int RecurseFindAddress(int* recordPtr)
 		break;
 	}
 	case NS:
-
 	{
 		DNSNSRecord* record = (DNSNSRecord*)&RecordsBuffer[begin + sizeof(DNSRecordReference)];
 
@@ -559,7 +543,6 @@ static int RecurseDNSResolver(sockaddr_in* dnsResolver, DNSFSM* dnsFSM)
 	return (addr ? 0 : -1);
 }
 
-
 static int CreateDNSQuestion(int flags, const char* domainname, int queryCount)
 {
 	char* q = QueryPool + queryCount;
@@ -567,7 +550,7 @@ static int CreateDNSQuestion(int flags, const char* domainname, int queryCount)
 	DNSHeader* header = (DNSHeader*)q;
 	memset(header, '\0', sizeof(DNSHeader));
 
-	header->flags = htons(make_dns_flags(0, 0, 0, 0, 0, 0, 0, 0));
+	header->flags = htons(MakeDNSFlags(0, 0, 0, 0, 0, 0, 0, 0));
 	header->QDCOUNT = htons(1);
 	header->ID = htons((rand() % (USHRT_MAX + 1)));
 
@@ -582,8 +565,6 @@ static int CreateDNSQuestion(int flags, const char* domainname, int queryCount)
 
 	return currLength;
 }
-
-
 
 static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFSM, int* lErrorReturn)
 {
@@ -652,7 +633,7 @@ static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFS
 
 	DEBUGLOG("Header ID: %hx", ntohs(headera->ID));
 	DEBUGLOG("flags ID: %hx", ntohs(headera->flags));
-	print_dns_flags(ntohs(headera->flags));
+	PrintDNSFlags(ntohs(headera->flags));
 	DEBUGLOG("QDCOUNT ID: %hx", ntohs(headera->QDCOUNT));
 	DEBUGLOG("ANCOUNT ID: %hx", ntohs(headera->ANCOUNT));
 	DEBUGLOG("NSCOUNT ID: %hx", ntohs(headera->NSCOUNT));
@@ -677,15 +658,14 @@ static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFS
 		return found;
 	}
 
-	if (rcode == RCODE_NXDOMAIN) {
+	if (rcode == RCODE_NXDOMAIN) 
+	{
 		found = 1;
 		if (!nDomainCount)
 		{
 			return found;
 		}
 	}
-
-
 
 	uint16_t offset = sizeof(DNSHeader);
 
@@ -729,7 +709,6 @@ static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFS
 		dnsPointer.recordOffset = offset;
 
 		offset += HandleDNSAnswer(answer, lQueryAnswerHead, &dnsPointer, &lRecordBufferCtr);
-
 	}
 
 	for (uint16_t i = 0; i < nDomainCount; i++)
@@ -778,7 +757,6 @@ static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFS
 		offset += HandleDNSAdditional(answer, lQueryAnswerHead, &dnsPointer, &lRecordBufferCtr);
 	}
 
-
 	dnsFSM->lRecordBufferPtr = lRecordBufferCtr;
 	dnsFSM->lDnsQueryCount = lQueryCount;
 	dnsFSM->lAnswerPoolCount = lAnswerPoolCount;
@@ -790,7 +768,6 @@ static int AskDNSQuestionAndHandleResponse(sockaddr_in* dnsServer, DNSFSM *dnsFS
 
 DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, int* answerCount)
 {
-
 	if (!s || !str) return NULL;
 
 	if (s->sin_family != AF_INET)
@@ -830,7 +807,6 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 	{
 		int currLength = CreateDNSQuestion(flags, str, fsm.lDnsQueryCount);
 
-
 		fsm.lDnsQueryLength = currLength;
 
 		found = AskDNSQuestionAndHandleResponse(&dnsResolver, &fsm, &lErrorReturn);
@@ -839,17 +815,19 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 		{
 			found = RecurseDNSResolver(&dnsResolver, &fsm);
 		}
+
 	} while (!found);
 
 	DNSQueryResult* returnHeader = (DNSQueryResult*)&FunctionAnswerPool[FunctionAnswerPtr];
 
-	if (lErrorReturn > 0) {
-
+	if (lErrorReturn > 0) 
+	{
 		int ResultCount = ProcessBuffer(returnHeader);
 
 		*answerCount = ResultCount;
 	}
-	else {
+	else 
+	{
 		*answerCount = lErrorReturn;
 	}
 
@@ -861,7 +839,7 @@ DNSQueryResult* GetAddrByHostName(sockaddr_in *s, const char* str, int flags, in
 	return returnHeader;
 }
 
-static int DeDeuplicateIPv4(char* recordBuffer, uint16_t count, uint16_t* recordoffsets, int addr)
+int DeDeuplicateIPv4(char* recordBuffer, uint16_t count, uint16_t* recordoffsets, int addr)
 {
 	int dup = 0;
 	for (uint16_t i = 0; i < count; i++)
@@ -884,7 +862,7 @@ static int DeDeuplicateIPv4(char* recordBuffer, uint16_t count, uint16_t* record
 	return dup;
 }
 
-static int DeDeuplicateIPv6(char* recordBuffer, uint16_t count, uint16_t *recordoffsets, char* addr)
+int DeDeuplicateIPv6(char* recordBuffer, uint16_t count, uint16_t *recordoffsets, char* addr)
 {
 	int dup = 0;
 
@@ -907,7 +885,7 @@ static int DeDeuplicateIPv6(char* recordBuffer, uint16_t count, uint16_t *record
 	return dup;
 }
 
-static int ProcessBuffer(DNSQueryResult* resultSpace)
+int ProcessBuffer(DNSQueryResult* resultSpace)
 {
 	int ResultCount = 0;
 	DNSQueryResult* resultPtr = resultSpace;
@@ -959,7 +937,7 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 
 				int aliasNameCount = 0;
 
-				if (record->queryAlias != ~0ui16)
+				if (record->queryAlias != MAX_USHORT)
 				{
 					DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->queryAlias];
 
@@ -1005,7 +983,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 						resultPtr->ipv4or6 = A;
 						resultPtr->ipv4 = addr;
 
-
 						DNSQueryResult* prev = resultPtr;
 						resultPtr++;
 						ResultCount++;
@@ -1015,12 +992,9 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 						memcpy(resultPtr->hostname, prev->hostname, hostNameCount);
 					}
 				}
-
-
 				break;
 			}
 			case NS:
-
 			{
 				DNSNSRecord* record = (DNSNSRecord*)&RecordsBuffer[j + sizeof(DNSRecordReference)];
 				char* ptr = (char*)&RecordsBuffer[j + sizeof(DNSRecordReference) + sizeof(DNSNSRecord)];
@@ -1033,7 +1007,7 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 
 				int aliasNameCount = 0;
 
-				if (record->queryAlias != ~0ui16)
+				if (record->queryAlias != MAX_USHORT)
 				{
 					DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->queryAlias];
 
@@ -1044,7 +1018,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 					if (aRef1->type == QUERYHOSTNAME)
 					{
 						off = sizeof(DNSRecordReference);
-
 					}
 
 					ptr = (char*)&RecordsBuffer[record->queryAlias + off];
@@ -1059,6 +1032,7 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 					for (uint16_t g = 0; g < record->arecordcount; g++)
 					{
 						DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->arecordid[g]];
+						
 						aRef1->visited = 1;
 
 						if (aRef1->type == A)
@@ -1080,7 +1054,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 						{
 							DNSAAAARecord* aRef = (DNSAAAARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
 
-
 							if (DeDeuplicateIPv6(RecordsBuffer, g, record->arecordid, aRef->addr))
 							{
 								continue;
@@ -1091,8 +1064,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 							memcpy(resultPtr->ipv6, aRef->addr, 16);
 						}
 
-						
-
 						DNSQueryResult* prev = resultPtr;
 						resultPtr++;
 						ResultCount++;
@@ -1100,17 +1071,11 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 
 						memcpy(resultPtr->aliasname, prev->aliasname, aliasNameCount);
 						memcpy(resultPtr->hostname, prev->hostname, hostNameCount);
-						
 					}
 				}
-
-				
-
 			}
-
 			case MX:
 			{
-
 				DNSMXRecord* record = (DNSMXRecord*)&RecordsBuffer[j + sizeof(DNSRecordReference)];
 				char* ptr = (char*)&RecordsBuffer[j + sizeof(DNSRecordReference) + sizeof(DNSMXRecord)];
 				
@@ -1125,17 +1090,15 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 
 				int aliasNameCount = 0;
 
-				if (record->queryAlias != ~0ui16)
+				if (record->queryAlias != MAX_USHORT)
 				{
 					DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->queryAlias];
-
 
 					int off = 0;
 
 					if (aRef1->type == QUERYHOSTNAME)
 					{
 						off = sizeof(DNSRecordReference);
-
 					}
 
 					char* ptr = (char*)&RecordsBuffer[record->queryAlias + off];
@@ -1152,14 +1115,8 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 						DNSRecordReference* aRef1 = (DNSRecordReference*)&RecordsBuffer[record->arecordid[g]];
 						aRef1->visited = 1;
 
-						
-
 						if (aRef1->type == A)
 						{
-
-							
-
-
 							DNSARecord* aRef = (DNSARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
 
 							int addr = aRef->addr;
@@ -1169,7 +1126,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 								continue;
 							}
 
-							
 							resultPtr->ipv4or6 = A;
 							resultPtr->ipv4 = addr;
 							PrintIPv4(addr);
@@ -1177,8 +1133,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 						else if (aRef1->type == AAAA)
 						{
 							DNSAAAARecord* aRef = (DNSAAAARecord*)&RecordsBuffer[record->arecordid[g] + sizeof(DNSRecordReference)];
-
-
 
 							if (DeDeuplicateIPv6(RecordsBuffer, g, record->arecordid, aRef->addr))
 							{
@@ -1190,8 +1144,6 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 							memcpy(resultPtr->ipv6, aRef->addr, 16);
 						}
 
-
-
 						DNSQueryResult* prev = resultPtr;
 						resultPtr++;
 						ResultCount++;
@@ -1202,10 +1154,8 @@ static int ProcessBuffer(DNSQueryResult* resultSpace)
 
 					}
 				}
-
 				break;
 			}
-
 			}
 		}
 		j += ref->size;
@@ -1245,7 +1195,7 @@ void ShowDNSQueryResult(DNSQueryResult* result)
 	}
 }
 
-static void PrintRecordHostname(char* ptr)
+void PrintRecordHostname(char* ptr)
 {
 #if DNS_LOG_LVL > 2
 	while(*ptr)
@@ -1256,7 +1206,7 @@ static void PrintRecordHostname(char* ptr)
 #endif
 }
 
-static void PrintIPv4(uint32_t addr)
+void PrintIPv4(uint32_t addr)
 {
 #if DNS_LOG_LVL > 2
 	DEBUGLOG("Address is : ");
@@ -1269,7 +1219,7 @@ static void PrintIPv4(uint32_t addr)
 #endif
 }
 
-static void PrintIPv6(char* addr)
+void PrintIPv6(char* addr)
 {
 #if DNS_LOG_LVL > 2
 	DEBUGLOG("Address is : ");
@@ -1285,7 +1235,7 @@ static void PrintIPv6(char* addr)
 #endif
 }
 
-static int HandlePointerCondition(uint16_t* iter, DNSPointer* pointer, int recordsBufferReader, int recordsBufferCounter)
+int HandlePointerCondition(uint16_t* iter, DNSPointer* pointer, int recordsBufferReader, int recordsBufferCounter)
 {
 	uint16_t lPointer = ntohs(*iter);;
 	
@@ -1315,11 +1265,8 @@ static int HandlePointerCondition(uint16_t* iter, DNSPointer* pointer, int recor
 	return ret;
 }
 
-static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
+int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
 {
-	
-
-
 	DEBUGLOG("Type %hx", ntohs(answer->TYPE));
 	DEBUGLOG("Class %hx", ntohs(answer->CLASS));
 	DEBUGLOG("TTL %lx", ntohl(answer->TTL));
@@ -1373,7 +1320,6 @@ static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* poin
 			RDDATA += 2;
 			break;
 		}
-
 		case NS:
 		{
 			PrintHostName(RDDATA, queryHead, 0);
@@ -1394,11 +1340,8 @@ static int HandleDNSNSNames(DNSAnswer* answer, char* queryHead, DNSPointer* poin
 	return len;
 }
 
-static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
+int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
 {
-	
-
-
 	DEBUGLOG("Type %hx", ntohs(answer->TYPE));
 	DEBUGLOG("Class %hx", ntohs(answer->CLASS));
 	DEBUGLOG("TTL %lx", ntohl(answer->TTL));
@@ -1407,7 +1350,6 @@ static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* point
 	int startReference = *lRecordBufferPtr;
 
 	int llRecordBufferPtr = startReference;
-
 
 	DNSRecordReference* ref = (DNSRecordReference*)&RecordsBuffer[llRecordBufferPtr];
 	ref->packet = (void*)queryHead;
@@ -1435,18 +1377,14 @@ static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* point
 		}
 		addr |= (RDDATA[3] & 0xff);
 
-		
-
 		DNSARecord* record = (DNSARecord*)&RecordsBuffer[llRecordBufferPtr];
 		record->addr = addr;
 		PrintIPv4(addr);
-
 
 		record->referenceHostNameRecordID = referenceLocation;
 		
 		if (referenceLocation != MAX_UINT)
 		{
-
 			DNSRecordReference* nameRef = (DNSRecordReference*)&RecordsBuffer[referenceLocation];
 
 			if (nameRef->type == CNAME)
@@ -1460,8 +1398,8 @@ static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* point
 			}
 		}
 		llRecordBufferPtr += sizeof(DNSARecord);
+		break;
 	}
-	break;
 	case CNAME:
 	{
 		PrintHostName(RDDATA, queryHead, 0);
@@ -1502,7 +1440,6 @@ static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* point
 	default:
 		ERRORLOG("Unhandled response");
 		break;
-
 	}
 
 	ref->size = llRecordBufferPtr - startReference;
@@ -1512,9 +1449,8 @@ static int HandleDNSAnswer(DNSAnswer* answer, char* queryHead, DNSPointer* point
 	return len;
 }
 
-static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
+int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* pointer, int* lRecordBufferPtr)
 {
-
 	DEBUGLOG("Type %hx", ntohs(answer->TYPE));
 	DEBUGLOG("Class %hx", ntohs(answer->CLASS));
 	DEBUGLOG("TTL %lx", ntohl(answer->TTL));
@@ -1542,7 +1478,6 @@ static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* p
 	{
 	case A:
 	{
-
 		uint32_t addr = 0;
 		for (int i = 0; i < len - 1; i++)
 		{
@@ -1578,8 +1513,8 @@ static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* p
 		}
 
 		llRecordBufferPtr += sizeof(DNSARecord);
+		break;
 	}
-	break;
 	case AAAA:
 	{
 		DNSAAAARecord* record = (DNSAAAARecord*)&RecordsBuffer[llRecordBufferPtr];
@@ -1588,8 +1523,6 @@ static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* p
 		{
 			record->addr[15-i] = (RDDATA[i] & 0xff);
 		}
-
-		
 
 		if (referenceLocation != MAX_UINT)
 		{
@@ -1614,13 +1547,10 @@ static int HandleDNSAdditional(DNSAnswer* answer, char* queryHead, DNSPointer* p
 
 		llRecordBufferPtr += sizeof(DNSAAAARecord);
 		break;
-
 	}
-
 	default:
 		ERRORLOG("Unhandled response");
 		break;
-
 	}
 
 	ref->size = llRecordBufferPtr - startReference;
